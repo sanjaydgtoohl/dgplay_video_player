@@ -43,6 +43,10 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
   const videoDurationTimerRef = useRef<number | null>(null);
 
   const current = safeItems[index % (safeItems.length || 1)];
+  const next = useMemo(() => {
+    if (!safeItems.length) return null;
+    return safeItems[(index + 1) % safeItems.length] || null;
+  }, [index, safeItems]);
 
   useEffect(() => {
     setCurrentVisible(false);
@@ -67,6 +71,7 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
       if (videoRef.current) {
         try { videoRef.current.pause(); } catch (_) {}
       }
+      console.log("current ",current);
       setPrevItem(current);
       setIsFading(true);
       setCurrentVisible(true);
@@ -118,6 +123,23 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
     }
   }, [current, safeItems.length]);
 
+  // Preload next media for smoother transitions
+  useEffect(() => {
+    if (!next) return;
+    if (isImage(next.creative_type)) {
+      const img = new Image();
+      img.decoding = 'async';
+      img.loading = 'eager' as any;
+      img.src = next.creative_url;
+    } else if (isVideo(next.creative_type)) {
+      const v = document.createElement('video');
+      v.preload = 'auto';
+      v.muted = true;
+      v.src = next.creative_url;
+      try { v.load(); } catch (_) {}
+    }
+  }, [next]);
+
   if (!current) {
     return <div className="flex h-screen w-screen items-center justify-center text-gray-500">No media</div>;
   }
@@ -128,8 +150,11 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
         <img
           src={item.creative_url}
           alt="creative"
-          className="absolute inset-0 h-screen w-screen select-none object-cover will-change-transform"
+          className="absolute inset-0 select-none object-cover will-change-transform"
           draggable={false}
+          decoding="async"
+          loading="eager"
+          style={{ width: '100vw', height: '100dvh' }}
         />
       );
     }
@@ -139,11 +164,13 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
         <video
           key={item.id}
           ref={ref as React.Ref<HTMLVideoElement>}
-          className="absolute inset-0 h-screen w-screen select-none object-cover will-change-transform"
+          className="absolute inset-0 select-none object-cover will-change-transform"
           src={item.creative_url}
           autoPlay
           muted
           playsInline
+          preload="auto"
+          style={{ width: '100vw', height: '100dvh' }}
         />
       );
     }
@@ -153,15 +180,27 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
         key={item.id}
         src={item.creative_url}
         title={`tag-${item.id}`}
-        className="absolute inset-0 h-screen w-screen border-0"
+        className="absolute inset-0 border-0"
         allow="autoplay; fullscreen"
         sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
+        style={{ width: '100vw', height: '100dvh' }}
       />
     );
   };
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-black">
+    <div className="relative overflow-hidden bg-black" style={{ width: '100vw', height: '100dvh' }}>
+      {/* Hidden preloader layer to warm cache for next media */}
+      {next && (
+        <div style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden>
+          {isImage(next.creative_type) && (
+            <img src={next.creative_url} alt="preload" decoding="async" loading="eager" />
+          )}
+          {isVideo(next.creative_type) && (
+            <video src={next.creative_url} muted preload="auto" />
+          )}
+        </div>
+      )}
       {prevItem && (
         <div
           className={`absolute inset-0 transition-opacity ease-in-out ${isFading ? 'opacity-0' : 'opacity-100'}`}

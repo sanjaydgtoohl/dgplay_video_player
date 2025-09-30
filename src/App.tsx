@@ -1,82 +1,101 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import PlaylistPlayer, { CreativeItem } from './components/PlaylistPlayer';
+import { ReconnectingSocket } from './services/socket';
+import { getDevice, postDevice } from './services/api';
 
-const data: CreativeItem[] = [
-  { 
-    id: 314, 
-    slot: 2, 
-    media_duration: 4, 
-    creative_type: 'jpg', 
-    creative_url: 'https://ads.dgplay.live/uploads/Media/3/0/1752060563_d32a552750b21a0b4c43.jpg' 
-  },
-  { 
-    id: 315, 
-    slot: 3, 
-    media_duration: 13, 
-    creative_type: 'mp4', 
-    creative_url: 'https://d2nljoxssb7y4b.cloudfront.net/uploads/media/3/videos/2025/07/29/1753797167_d7292be7deadc27103dc.mp4' 
-  },
-  { 
-    id: 316, 
-    slot: 4, 
-    media_duration: 16, 
-    creative_type: 'mp4', 
-    creative_url: 'https://d2nljoxssb7y4b.cloudfront.net/uploads/media/3/videos/2025/07/29/1753798862_d0b4f54a2ab4ea1d954c.mp4' 
-  },
-  { 
-    id: 317, 
-    slot: 5,
-     media_duration: 15, 
-    creative_type: 'mp4', 
-    creative_url: 'https://d2nljoxssb7y4b.cloudfront.net/uploads/media/3/videos/2025/07/29/1753799196_ed501426ae88c5513c63.mp4' },
-  { 
-    id: 318, 
-    slot: 6, 
-    media_duration: 12, 
-    creative_type: 'tag',
-     creative_url: 'https://ssp.dgtoohl.com/uploads/vast/3809578-display.html' 
-    },
-  { 
-    id: 319, 
-    slot: 7,
-     media_duration: 10, 
-    creative_type: 'jpg', 
-    creative_url: 'https://ads.dgplay.live/uploads/Media/3//1755757652_40ee815be21b9997e77f.jpg'
-  },
-  { 
-    id: 320, 
-    slot: 8, 
-    media_duration: 10, 
-    creative_type: 'jpg', 
-    creative_url: 'https://ads.dgplay.live/uploads/Media/3//1756120751_64cf5db16f8c069f4f7e.jpg'
-   },
-  { 
-    id: 321,
-     slot: 9, 
-    media_duration: 7, 
-    creative_type: 'mp4', 
-    creative_url: 'https://ads.dgplay.live/uploads/Media/3//1758106849_992f90810ebbfa254577.mp4' 
-    },
-  {
-     id: 322, 
-     slot: 10, 
-     media_duration: 6, 
-    creative_type: 'tag', 
-    creative_url: 'https://ads.dgplay.live/API/Mobile/getPlaylisFCMLink/3/632/51379' },
-  { 
-    id: 323,
-     slot: 11, 
-    media_duration: 10, 
-    creative_type: 'tag',
-     creative_url: 'https://ads.dgplay.live/API/Mobile/getPlaylisFCMLink/3/632/51379'
-   },
-];
+const DEVICE_ID = 51377;
+
+const mapApiToCreativeItems = (rows: any[]): CreativeItem[] => {
+  return (rows || [])
+    .map((r, idx) => {
+      const creative_type = (r.media_type || '').toLowerCase();
+      const creative_url = r.media_url || '';
+      const media_duration = typeof r.media_duration === 'number' ? r.media_duration : 10;
+      return {
+        id: Number(r.media_id ?? idx),
+        slot: Number(idx + 1),
+        media_duration,
+        creative_type,
+        creative_url,
+      } as CreativeItem;
+    })
+    .filter(i => Boolean(i.creative_url));
+};
 
 const App: React.FC = () => {
+  const [items, setItems] = useState<CreativeItem[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const socketRef = useRef<ReconnectingSocket<any> | null>(null);
+  const pollRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Initial fetch
+    getDevice({ deviceId: DEVICE_ID })
+      .then((res) => {
+        try {
+          const rows = Array.isArray(res?.data) ? res.data : [];
+          const mapped = mapApiToCreativeItems(rows);
+          setItems(mapped);
+        } catch (e) {
+          console.warn('[API] Map failed', e, res);
+        }
+      })
+      .catch((err) => {
+        console.error('[API] getDevice failed', err);
+        setErrorMessage(`Failed to fetch initial playlist. Check API server. ${err?.message ?? ''}`);
+      });
+
+    const url = (import.meta.env.VITE_SOCKET_URL as string | undefined);
+    let unsubscribe: () => void = () => {};
+    if (url) {
+      const ws = new ReconnectingSocket<{ items?: CreativeItem[]; data?: any[]; error?: string; type?: string; message?: string }>({
+        url,
+        initialSubscribe: { deviceId: DEVICE_ID }
+      });
+      socketRef.current = ws;
+      unsubscribe = ws.subscribe((payload: { items?: CreativeItem[]; data?: any[]; error?: string; type?: string; message?: string }) => {
+        if (typeof payload === 'string') return;
+        if (payload?.type === 'welcome') { setErrorMessage(null); return; }
+        if (payload?.error) { console.error('[WS] Server error', payload.error); setErrorMessage(`Socket error: ${payload.error}`); return; }
+        if (Array.isArray(payload?.data)) { setItems(mapApiToCreativeItems(payload.data)); return; }
+        if (Array.isArray(payload?.items)) { setItems(payload.items as CreativeItem[]); return; }
+      });
+    }
+
+    // Start 3s poller to POST deviceId and update items
+    pollRef.current = window.setInterval(() => {
+      postDevice({ deviceId: DEVICE_ID })
+        .then((res) => {
+          const rows = Array.isArray(res?.data) ? res.data : [];
+          const mapped = mapApiToCreativeItems(rows);
+          if (mapped.length) setItems(mapped);
+        })
+        .catch((err) => {
+          console.warn('[API] postDevice poll failed', err?.message || err);
+        });
+      // Optional: also ping socket with deviceId
+      try { socketRef.current?.send({ deviceId: DEVICE_ID }); } catch {}
+    }, 300000);
+
+    return () => {
+      unsubscribe();
+      socketRef.current?.close();
+      if (pollRef.current) {
+        window.clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full">
-        <PlaylistPlayer items={data} />
+        {errorMessage && (
+          <div className="mb-2 w-full bg-red-50 px-4 py-2 text-sm text-red-600">
+            {errorMessage}
+          </div>
+        )}
+        <PlaylistPlayer items={items} />
       </div>
     </div>
   );

@@ -4,12 +4,11 @@ This is a simple React 19 application that allows users to play videos using a c
 
 ## Features
 
-- Play, pause, and control volume of videos.
-- Responsive design using Tailwind CSS.
+- Full-screen playlist player with smooth crossfades between videos, images, and tags
+- Auto-advance by media_duration, videos autoplay muted
+- Live updates over WebSocket (optional)
 
 ## Getting Started
-
-To get a local copy up and running, follow these simple steps.
 
 ### Prerequisites
 
@@ -18,28 +17,35 @@ To get a local copy up and running, follow these simple steps.
 
 ### Installation
 
-1. Install the dependencies:
-   ```bash
-   yarn install
-   ```
+```bash
+yarn install
+```
 
-### Running the Application
+### Development
 
-To start the development server, run:
+Create a `.env` (or `.env.local`) with optional WebSocket URL for live updates:
+
+```
+VITE_SOCKET_URL=wss://your-websocket-endpoint
+```
+
+Run the dev server:
+
 ```bash
 yarn start
 ```
 
-The application will be available at `http://localhost:3000`.
+### Build & Preview
 
-### Built With
+```bash
+yarn build
+yarn preview
+```
 
-- [React](https://reactjs.org/) - A JavaScript library for building user interfaces
-- [Tailwind CSS](https://tailwindcss.com/) - A utility-first CSS framework for styling
+### Notes
 
-### Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request for any improvements or features.
+- Put assets in `public/` or use absolute URLs.
+- Tailwind CSS v4 is used with `@tailwindcss/postcss`.
 
 ### License
 
