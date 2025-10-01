@@ -8,6 +8,21 @@ export interface CreativeItem {
   media_duration: number; // seconds
   creative_type: CreativeType;
   creative_url: string;
+  start_time_sec?: number; // optional in-media start offset in seconds
+  end_time_sec?: number;   // optional in-media end offset in seconds
+  // Raw API fields (optional, carried through for context/debugging)
+  start_time?: string;
+  end_time?: string;
+  device_id?: number;
+  screen_id?: number;
+  media_id?: number;
+  type?: string;
+  cmp_id?: number;
+  cmp_start_date_time?: string; // ISO date string
+  cmp_end_date_time?: string;   // ISO date string
+  loopslot?: number;
+  created_at?: string; // ISO date string
+  updated_at?: string; // ISO date string
 }
 
 function isImage(type: CreativeType): boolean {
@@ -96,10 +111,17 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
 
       const handleLoadedMetadata = () => {
         try {
-          video.currentTime = 0;
+          const seekTo = typeof current.start_time === 'number' && current.start_time >= 0
+            ? current.start_time
+            : 0;
+          video.currentTime = seekTo;
         } catch (_) {}
         // Schedule exact advance by provided media_duration if present
-        const ms = Math.max(0, (current.media_duration || 0) * 1000);
+        let ms = Math.max(0, (current.media_duration || 0) * 1000);
+        if (typeof current.start_time === 'number' && typeof current.end_time === 'number') {
+          const clipMs = Math.max(0, (current.end_time - current.start_time) * 1000);
+          if (clipMs > 0) ms = clipMs;
+        }
         if (ms) {
           videoDurationTimerRef.current = window.setTimeout(() => {
             advance();
@@ -107,9 +129,19 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
         }
       };
 
+      const handleTimeUpdate = () => {
+        if (
+          typeof current.end_time === 'number' &&
+          video.currentTime >= current.end_time - 0.05 // small epsilon
+        ) {
+          advance();
+        }
+      };
+
       const handleEnded = () => advance();
 
       video.addEventListener('loadedmetadata', handleLoadedMetadata);
+      video.addEventListener('timeupdate', handleTimeUpdate);
       video.addEventListener('ended', handleEnded);
 
       // Attempt playback for smoother start
@@ -117,6 +149,7 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
 
       return () => {
         video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        video.removeEventListener('timeupdate', handleTimeUpdate);
         video.removeEventListener('ended', handleEnded);
         if (videoDurationTimerRef.current) window.clearTimeout(videoDurationTimerRef.current);
       };
@@ -143,8 +176,9 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
   if (!current) {
     return <div className="flex h-screen w-screen items-center justify-center text-gray-500">No media</div>;
   }
-
+  
   const renderLayer = (item: CreativeItem, ref?: VideoRef) => {
+    console.log("item ",item);
     if (isImage(item.creative_type)) {
       return (
         <img
