@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import PlaylistPlayer, { CreativeItem } from './components/PlaylistPlayer';
 import { ReconnectingSocket } from './services/socket';
 import { getDevice, postDevice } from './services/api';
+import Loader from './components/Loader';
 
 const DEVICE_ID = 51377;
 
@@ -93,11 +94,13 @@ const filterItemsBySchedule = (items: CreativeItem[]): CreativeItem[] => {
 const App: React.FC = () => {
   const [items, setItems] = useState<CreativeItem[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const socketRef = useRef<ReconnectingSocket<any> | null>(null);
   const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Initial fetch
+    setIsLoading(true);
     getDevice({ deviceId: DEVICE_ID })
       .then((res) => {
         try {
@@ -105,6 +108,7 @@ const App: React.FC = () => {
           const mapped = mapApiToCreativeItems(rows);
           const filtered = filterItemsBySchedule(mapped);
           setItems(filtered);
+          setErrorMessage(null);
         } catch (e) {
           console.warn('[API] Map failed', e, res);
         }
@@ -112,7 +116,8 @@ const App: React.FC = () => {
       .catch((err) => {
         console.error('[API] getDevice failed', err);
         setErrorMessage(`Failed to fetch initial playlist. Check API server. ${err?.message ?? ''}`);
-      });
+      })
+      .finally(() => setIsLoading(false));
 
     const url = (import.meta.env.VITE_SOCKET_URL as string | undefined);
     let unsubscribe: () => void = () => {};
@@ -167,6 +172,9 @@ const App: React.FC = () => {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-full">
+        {isLoading && (
+          <Loader fullscreen message="Fetching your playlist…" subtext="This may take a moment" />
+        )}
         {errorMessage && (
           <div className="mb-2 w-full bg-red-50 px-4 py-2 text-sm text-red-600">
             {errorMessage}
