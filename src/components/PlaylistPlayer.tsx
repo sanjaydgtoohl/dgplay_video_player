@@ -41,22 +41,157 @@ interface PlaylistPlayerProps {
   items: CreativeItem[];
 }
 
-const FADE_MS = 700;
-const EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'; // ease-out expo-like
+// Advanced animation constants
+const FADE_MS = 1200; // Ultra-smooth fade duration
+const CROSSFADE_MS = 1000; // Smooth crossfade duration
+const SCALE_EFFECT = 1.005; // Ultra-subtle scale effect
+const BLUR_EFFECT = 0.5; // Subtle blur effect
+
+// Advanced easing curves for different effects
+const EASING_SMOOTH = 'cubic-bezier(0.23, 1, 0.32, 1)'; // Ultra-smooth ease-out
+const EASING_CINEMATIC = 'cubic-bezier(0.25, 0.1, 0.25, 1)'; // Cinematic ease
+const EASING_NATURAL = 'cubic-bezier(0.4, 0, 0.2, 1)'; // Natural motion
+const EASING_BOUNCE = 'cubic-bezier(0.68, -0.55, 0.265, 1.55)'; // Subtle bounce
 
 type VideoRef = React.MutableRefObject<HTMLVideoElement | null> | React.RefObject<HTMLVideoElement | null> | undefined;
 
+// Utility function to parse time strings - moved outside component for better performance
+const parseTimeToSeconds = (timeStr: string): number => {
+  const parts = timeStr.split(':').map(Number);
+  if (parts.length === 3) {
+    // HH:MM:SS format
+    const [hours, minutes, seconds] = parts;
+    return hours * 3600 + minutes * 60 + seconds;
+  } else if (parts.length === 2) {
+    // MM:SS format
+    const [minutes, seconds] = parts;
+    return minutes * 60 + seconds;
+  } else {
+    console.warn("Invalid time format:", timeStr);
+    return 0;
+  }
+};
+
+// Utility function to get current time in MM:SS format
+const getCurrentTimeString = (): string => {
+  const now = new Date();
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+};
+
+// Utility function to check if item is scheduled
+const isItemScheduled = (item: CreativeItem, currentTime: string): boolean => {
+  // No time restrictions - always show
+  if (!item.start_time && !item.end_time) {
+    return true;
+  }
+  
+  const currentSeconds = parseTimeToSeconds(currentTime);
+  const startSeconds = item.start_time ? parseTimeToSeconds(item.start_time) : 0;
+  const endSeconds = item.end_time ? parseTimeToSeconds(item.end_time) : 86400; // 24 hours
+  
+  return currentSeconds >= startSeconds && currentSeconds <= endSeconds;
+};
+
+// Sophisticated animation helper functions
+const getEasingForTransition = (transitionType: string, direction: 'in' | 'out'): string => {
+  switch (transitionType) {
+    case 'fade':
+      return direction === 'in' ? EASING_SMOOTH : EASING_CINEMATIC;
+    case 'crossfade':
+      return EASING_NATURAL;
+    case 'slide':
+      return direction === 'in' ? EASING_SMOOTH : EASING_CINEMATIC;
+    case 'zoom':
+      return direction === 'in' ? EASING_BOUNCE : EASING_SMOOTH;
+    default:
+      return EASING_SMOOTH;
+  }
+};
+
+const getTransformForTransition = (transitionType: string, direction: 'in' | 'out', isActive: boolean): string => {
+  const baseTransform = 'translateZ(0)';
+  
+  if (!isActive) {
+    switch (transitionType) {
+      case 'fade':
+        return `${baseTransform} scale(${SCALE_EFFECT})`;
+      case 'crossfade':
+        return `${baseTransform} scale(1)`;
+      case 'slide':
+        return `${baseTransform} translateX(${direction === 'in' ? '100%' : '-100%'}) scale(${SCALE_EFFECT})`;
+      case 'zoom':
+        return `${baseTransform} scale(${direction === 'in' ? '0.8' : '1.2'})`;
+      default:
+        return `${baseTransform} scale(${SCALE_EFFECT})`;
+    }
+  }
+  
+  return `${baseTransform} scale(1)`;
+};
+
+const getFilterForTransition = (transitionType: string, direction: 'in' | 'out', isActive: boolean): string => {
+  if (!isActive) {
+    switch (transitionType) {
+      case 'fade':
+        return `blur(${BLUR_EFFECT}px) brightness(0.9)`;
+      case 'crossfade':
+        return `blur(0px) brightness(1)`;
+      case 'slide':
+        return `blur(${BLUR_EFFECT * 0.5}px) brightness(0.95)`;
+      case 'zoom':
+        return `blur(${BLUR_EFFECT * 1.5}px) brightness(0.8)`;
+      default:
+        return `blur(${BLUR_EFFECT}px)`;
+    }
+  }
+  
+  return 'blur(0px) brightness(1)';
+};
+
+const getClipPathForTransition = (transitionType: string, direction: 'in' | 'out', isActive: boolean): string => {
+  if (!isActive) {
+    switch (transitionType) {
+      case 'slide':
+        return direction === 'in' ? 'inset(0 100% 0 0)' : 'inset(0 0 0 100%)';
+      case 'zoom':
+        return 'circle(0% at 50% 50%)';
+      default:
+        return 'inset(0)';
+    }
+  }
+  
+  return 'inset(0)';
+};
+
 const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
-  const safeItems = useMemo(() => items.filter(i => i.creative_url), [items]);
+  // State management
   const [index, setIndex] = useState<number>(0);
+  const [time, setTime] = useState(getCurrentTimeString);
   const [prevItem, setPrevItem] = useState<CreativeItem | null>(null);
   const [isFading, setIsFading] = useState<boolean>(false);
   const [currentVisible, setCurrentVisible] = useState<boolean>(false);
+  const [transitionType, setTransitionType] = useState<'fade' | 'crossfade' | 'slide' | 'zoom' | 'none'>('none');
+  const [animationPhase, setAnimationPhase] = useState<'idle' | 'preparing' | 'transitioning' | 'completing'>('idle');
 
+  // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const timerRef = useRef<number | null>(null);
   const videoDurationTimerRef = useRef<number | null>(null);
 
+  // Filter items based on URL and scheduling
+  const safeItems = useMemo(() => {
+    return items.filter(item => {
+      // Must have creative_url
+      if (!item.creative_url) return false;
+      
+      // Check if item is currently scheduled
+      return isItemScheduled(item, time);
+    });
+  }, [items, time]);
+
+  // Current and next items
   const current = safeItems[index % (safeItems.length || 1)];
   const next = useMemo(() => {
     if (!safeItems.length) return null;
@@ -68,6 +203,15 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
     const id = window.setTimeout(() => setCurrentVisible(true), 20);
     return () => window.clearTimeout(id);
   }, [current?.id]);
+
+  // Update time every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTime(getCurrentTimeString());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (timerRef.current) {
@@ -82,19 +226,70 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
     if (!current || safeItems.length === 0) return;
 
     const advance = () => {
+      // Determine transition type based on current and next item types
+      const nextIndex = (index + 1) % safeItems.length;
+      const nextItem = safeItems[nextIndex];
+      
       // Pause current video if any to avoid overlapping audio
       if (videoRef.current) {
-        try { videoRef.current.pause(); } catch (_) {}
+        try { 
+          videoRef.current.pause(); 
+          videoRef.current.currentTime = 0; // Reset video position
+        } catch (_) {}
       }
-      console.log("current ",current);
+      
+      // Determine sophisticated transition type
+      const currentType = current.creative_type;
+      const nextType = nextItem?.creative_type;
+      
+      let transition: 'fade' | 'crossfade' | 'slide' | 'zoom' | 'none' = 'fade';
+      
+      // Advanced transition logic
+      if (currentType === nextType) {
+        transition = 'crossfade'; // Same type = ultra-smooth crossfade
+      } else if (isVideo(currentType) && isImage(nextType)) {
+        transition = 'zoom'; // Video to image = zoom effect
+      } else if (isImage(currentType) && isVideo(nextType)) {
+        transition = 'slide'; // Image to video = slide effect
+      } else if (isTag(currentType) || isTag(nextType)) {
+        transition = 'fade'; // Tag content = clean fade
+      }
+      
+      setAnimationPhase('preparing');
+      setTransitionType(transition);
       setPrevItem(current);
       setIsFading(true);
-      setCurrentVisible(true);
+      setCurrentVisible(false);
+      
+      // Sophisticated timing based on transition type
+      const timing = {
+        fade: { delay: FADE_MS / 4, duration: FADE_MS },
+        crossfade: { delay: CROSSFADE_MS / 3, duration: CROSSFADE_MS },
+        slide: { delay: FADE_MS / 5, duration: FADE_MS * 1.2 },
+        zoom: { delay: FADE_MS / 6, duration: FADE_MS * 1.1 }
+      };
+      
+      const currentTiming = timing[transition];
+      
+      // Phase 1: Start transition
       window.setTimeout(() => {
+        setAnimationPhase('transitioning');
+        setCurrentVisible(true);
+      }, currentTiming.delay);
+      
+      // Phase 2: Complete transition
+      window.setTimeout(() => {
+        setAnimationPhase('completing');
         setIsFading(false);
         setPrevItem(null);
         setIndex(prev => (prev + 1) % safeItems.length);
-      }, FADE_MS);
+      }, currentTiming.duration);
+      
+      // Phase 3: Reset
+      window.setTimeout(() => {
+        setTransitionType('none');
+        setAnimationPhase('idle');
+      }, currentTiming.duration + 100);
     };
 
     if (isImage(current.creative_type) || isTag(current.creative_type)) {
@@ -178,7 +373,7 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
   }
   
   const renderLayer = (item: CreativeItem, ref?: VideoRef) => {
-    console.log("item ",item);
+    // console.log("item ",item);
     if (isImage(item.creative_type)) {
       return (
         <img
@@ -223,7 +418,16 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
   };
 
   return (
-    <div className="relative overflow-hidden bg-black" style={{ width: '100vw', height: '100dvh' }}>
+    <div 
+      className="relative overflow-hidden bg-black" 
+      style={{ 
+        width: '100vw', 
+        height: '100dvh',
+        transform: 'translateZ(0)', // Force hardware acceleration
+        backfaceVisibility: 'hidden', // Prevent flickering
+        perspective: '1000px' // Enable 3D transforms
+      }}
+    >
       {/* Hidden preloader layer to warm cache for next media */}
       {next && (
         <div style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden>
@@ -235,27 +439,35 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
           )}
         </div>
       )}
+      {/* Previous item layer with sophisticated animations */}
       {prevItem && (
         <div
-          className={`absolute inset-0 transition-opacity ease-in-out ${isFading ? 'opacity-0' : 'opacity-100'}`}
+          className={`absolute inset-0 transition-all ${isFading ? 'opacity-0' : 'opacity-100'}`}
           style={{
-            transitionDuration: `${FADE_MS}ms`,
-            transitionTimingFunction: EASING,
-            transitionProperty: 'opacity, transform',
-            transform: isFading ? 'scale(1.02)' : 'scale(1)'
+            transitionDuration: `${transitionType === 'crossfade' ? CROSSFADE_MS : FADE_MS}ms`,
+            transitionTimingFunction: getEasingForTransition(transitionType, 'out'),
+            transitionProperty: 'opacity, transform, filter, clip-path',
+            transform: getTransformForTransition(transitionType, 'out', isFading),
+            filter: getFilterForTransition(transitionType, 'out', isFading),
+            clipPath: getClipPathForTransition(transitionType, 'out', isFading),
+            willChange: 'opacity, transform, filter, clip-path'
           }}
         >
           {renderLayer(prevItem)}
         </div>
       )}
 
+      {/* Current item layer with sophisticated animations */}
       <div
-        className={`absolute inset-0 transition-opacity ease-in-out ${currentVisible ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 transition-all ${currentVisible ? 'opacity-100' : 'opacity-0'}`}
         style={{
-          transitionDuration: `${FADE_MS}ms`,
-          transitionTimingFunction: EASING,
-          transitionProperty: 'opacity, transform',
-          transform: currentVisible ? 'scale(1)' : 'scale(1.02)'
+          transitionDuration: `${transitionType === 'crossfade' ? CROSSFADE_MS : FADE_MS}ms`,
+          transitionTimingFunction: getEasingForTransition(transitionType, 'in'),
+          transitionProperty: 'opacity, transform, filter, clip-path',
+          transform: getTransformForTransition(transitionType, 'in', currentVisible),
+          filter: getFilterForTransition(transitionType, 'in', currentVisible),
+          clipPath: getClipPathForTransition(transitionType, 'in', currentVisible),
+          willChange: 'opacity, transform, filter, clip-path'
         }}
       >
         {renderLayer(current, videoRef)}

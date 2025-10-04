@@ -9,7 +9,7 @@ export interface ApiOptions {
 // In dev, force relative base so Vite proxy handles CORS. In prod, use explicit base.
 const DEFAULT_BASE = (import.meta as any).env?.DEV
   ? ''
-  : ((import.meta as any).env?.VITE_API_BASE_URL || '');
+  : ((import.meta as any).env?.VITE_API_BASE_URL || 'https://livesync.dgtoohl.com');
 
 async function request(path: string, init: RequestInit): Promise<Response> {
   const url = `${DEFAULT_BASE}${path}`;

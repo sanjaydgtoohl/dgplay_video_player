@@ -98,11 +98,21 @@ export class ReconnectingSocket<T = unknown> {
     this.ws.onclose = (ev: CloseEvent) => {
       console.warn('[WS] close', ev.code, ev.reason, 'url=', effectiveUrl);
       this.ws = null;
-      this.scheduleReconnect();
+      if (!this.isClosedByUser) {
+        this.scheduleReconnect();
+      }
     };
 
     this.ws.onerror = (e: Event) => {
       console.warn('[WS] error', e, 'url=', effectiveUrl);
+      // Notify subscribers about connection errors
+      this.subscribers.forEach((fn) => {
+        try {
+          fn({ error: 'WebSocket connection error', type: 'error' } as T);
+        } catch (err) {
+          console.warn('[WS] Error notifying subscriber', err);
+        }
+      });
     };
   }
 

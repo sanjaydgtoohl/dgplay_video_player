@@ -119,7 +119,8 @@ const App: React.FC = () => {
       })
       .finally(() => setIsLoading(false));
 
-    const url = (import.meta.env.VITE_SOCKET_URL as string | undefined);
+    const envSocketUrl = import.meta.env.VITE_SOCKET_URL as string | undefined;
+    const url = envSocketUrl || 'wss://livesync.dgtoohl.com/ws';
     let unsubscribe: () => void = () => {};
     if (url) {
       const ws = new ReconnectingSocket<{ items?: CreativeItem[]; data?: any[]; error?: string; type?: string; message?: string }>({
