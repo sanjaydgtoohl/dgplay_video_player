@@ -1,5 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import App from './App';
 import './styles/tailwind.css';
 
@@ -11,6 +12,11 @@ if (!rootEl) {
 const root = createRoot(rootEl);
 root.render(
   <React.StrictMode>
-    <App />
+    <BrowserRouter>
+      <Routes>
+        <Route path="/device/:deviceId" element={<App />} />
+        <Route path="/" element={<App />} />
+      </Routes>
+    </BrowserRouter>
   </React.StrictMode>
 );

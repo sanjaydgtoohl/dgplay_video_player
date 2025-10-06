@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-export type CreativeType = 'mp4' | 'jpg' | 'jpeg' | 'png' | 'gif' | 'tag' | 'default';
+export type CreativeType = 'mp4' | 'jpg' | 'jpeg' | 'png' | 'gif' | 'tag' | 'banner' | 'digital-pod' | 'default';
 
 export interface CreativeItem {
   id: number;
@@ -36,6 +36,55 @@ function isVideo(type: CreativeType): boolean {
 function isTag(type: CreativeType): boolean {
   return type === 'tag';
 }
+
+function isBanner(type: CreativeType): boolean {
+  return type === 'banner';
+}
+
+function isDigitalPod(type: CreativeType): boolean {
+  return type === 'digital-pod';
+}
+
+// Responsive configuration
+const RESPONSIVE_CONFIG = {
+  breakpoints: {
+    mobile: 480,
+    tablet: 768,
+    desktop: 1024,
+    large: 1920
+  },
+  aspectRatios: {
+    banner: '16/9',
+    digitalPod: '4/3',
+    video: '16/9'
+  }
+};
+
+// Hook for responsive behavior
+const useResponsive = () => {
+  const [screenSize, setScreenSize] = useState<'mobile' | 'tablet' | 'desktop' | 'large'>('desktop');
+  
+  useEffect(() => {
+    const updateScreenSize = () => {
+      const width = window.innerWidth;
+      if (width < RESPONSIVE_CONFIG.breakpoints.mobile) {
+        setScreenSize('mobile');
+      } else if (width < RESPONSIVE_CONFIG.breakpoints.tablet) {
+        setScreenSize('tablet');
+      } else if (width < RESPONSIVE_CONFIG.breakpoints.desktop) {
+        setScreenSize('desktop');
+      } else {
+        setScreenSize('large');
+      }
+    };
+
+    updateScreenSize();
+    window.addEventListener('resize', updateScreenSize);
+    return () => window.removeEventListener('resize', updateScreenSize);
+  }, []);
+
+  return screenSize;
+};
 
 interface PlaylistPlayerProps {
   items: CreativeItem[];
@@ -174,6 +223,9 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
   const [currentVisible, setCurrentVisible] = useState<boolean>(false);
   const [transitionType, setTransitionType] = useState<'fade' | 'crossfade' | 'slide' | 'zoom' | 'none'>('none');
   const [animationPhase, setAnimationPhase] = useState<'idle' | 'preparing' | 'transitioning' | 'completing'>('idle');
+  
+  // Responsive behavior
+  const screenSize = useResponsive();
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -251,6 +303,10 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
         transition = 'zoom'; // Video to image = zoom effect
       } else if (isImage(currentType) && isVideo(nextType)) {
         transition = 'slide'; // Image to video = slide effect
+      } else if (isBanner(currentType) || isBanner(nextType)) {
+        transition = 'slide'; // Banner content = slide effect
+      } else if (isDigitalPod(currentType) || isDigitalPod(nextType)) {
+        transition = 'zoom'; // Digital pod = zoom effect
       } else if (isTag(currentType) || isTag(nextType)) {
         transition = 'fade'; // Tag content = clean fade
       }
@@ -292,7 +348,7 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
       }, currentTiming.duration + 100);
     };
 
-    if (isImage(current.creative_type) || isTag(current.creative_type)) {
+    if (isImage(current.creative_type) || isTag(current.creative_type) || isBanner(current.creative_type) || isDigitalPod(current.creative_type)) {
       const ms = Math.max(0, (current.media_duration || 0) * 1000);
       timerRef.current = window.setTimeout(advance, ms || 1000);
       return () => {
@@ -354,7 +410,7 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
   // Preload next media for smoother transitions
   useEffect(() => {
     if (!next) return;
-    if (isImage(next.creative_type)) {
+    if (isImage(next.creative_type) || isBanner(next.creative_type) || isDigitalPod(next.creative_type)) {
       const img = new Image();
       img.decoding = 'async';
       img.loading = 'eager' as any;
@@ -372,18 +428,52 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
     return <div className="flex h-screen w-screen items-center justify-center text-gray-500">No media</div>;
   }
   
+  // Get responsive styles based on media type and screen size
+  const getResponsiveStyles = (item: CreativeItem) => {
+    const baseStyles = {
+      width: '100vw',
+      height: '100dvh',
+      objectFit: 'cover' as const,
+    };
+
+    if (isBanner(item.creative_type)) {
+      // Banner: Full width, maintain aspect ratio
+      return {
+        ...baseStyles,
+        height: 'auto',
+        minHeight: '100dvh',
+        aspectRatio: RESPONSIVE_CONFIG.aspectRatios.banner,
+        objectFit: 'contain' as const,
+      };
+    }
+
+    if (isDigitalPod(item.creative_type)) {
+      // Digital Pod: Responsive sizing based on screen size
+      const podStyles = {
+        mobile: { width: '100vw', height: '100dvh', objectFit: 'cover' as const },
+        tablet: { width: '100vw', height: '100dvh', objectFit: 'cover' as const },
+        desktop: { width: '100vw', height: '100dvh', objectFit: 'cover' as const },
+        large: { width: '100vw', height: '100dvh', objectFit: 'cover' as const },
+      };
+      return { ...baseStyles, ...podStyles[screenSize] };
+    }
+
+    return baseStyles;
+  };
+
   const renderLayer = (item: CreativeItem, ref?: VideoRef) => {
-    // console.log("item ",item);
+    const responsiveStyles = getResponsiveStyles(item);
+    
     if (isImage(item.creative_type)) {
       return (
         <img
           src={item.creative_url}
           alt="creative"
-          className="absolute inset-0 select-none object-cover will-change-transform"
+          className="absolute inset-0 select-none will-change-transform"
           draggable={false}
           decoding="async"
           loading="eager"
-          style={{ width: '100vw', height: '100dvh' }}
+          style={responsiveStyles}
         />
       );
     }
@@ -393,14 +483,56 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
         <video
           key={item.id}
           ref={ref as React.Ref<HTMLVideoElement>}
-          className="absolute inset-0 select-none object-cover will-change-transform"
+          className="absolute inset-0 select-none will-change-transform"
           src={item.creative_url}
           autoPlay
           muted
           playsInline
           preload="auto"
-          style={{ width: '100vw', height: '100dvh' }}
+          style={responsiveStyles}
         />
+      );
+    }
+
+    if (isBanner(item.creative_type)) {
+      return (
+        <div className="absolute inset-0 flex items-center justify-center bg-black">
+          <img
+            src={item.creative_url}
+            alt="banner"
+            className="max-w-full max-h-full select-none will-change-transform"
+            draggable={false}
+            decoding="async"
+            loading="eager"
+            style={{
+              aspectRatio: RESPONSIVE_CONFIG.aspectRatios.banner,
+              objectFit: 'contain',
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (isDigitalPod(item.creative_type)) {
+      return (
+        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 to-black">
+          <div className="relative w-full h-full max-w-4xl max-h-4xl">
+            <img
+              src={item.creative_url}
+              alt="digital pod"
+              className="w-full h-full select-none will-change-transform rounded-lg shadow-2xl"
+              draggable={false}
+              decoding="async"
+              loading="eager"
+              style={{
+                aspectRatio: RESPONSIVE_CONFIG.aspectRatios.digitalPod,
+                objectFit: 'cover',
+              }}
+            />
+            {/* Digital pod overlay effects */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent rounded-lg pointer-events-none" />
+          </div>
+        </div>
       );
     }
 
@@ -412,7 +544,7 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
         className="absolute inset-0 border-0"
         allow="autoplay; fullscreen"
         sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
-        style={{ width: '100vw', height: '100dvh' }}
+        style={responsiveStyles}
       />
     );
   };
@@ -431,7 +563,7 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
       {/* Hidden preloader layer to warm cache for next media */}
       {next && (
         <div style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden>
-          {isImage(next.creative_type) && (
+          {(isImage(next.creative_type) || isBanner(next.creative_type) || isDigitalPod(next.creative_type)) && (
             <img src={next.creative_url} alt="preload" decoding="async" loading="eager" />
           )}
           {isVideo(next.creative_type) && (

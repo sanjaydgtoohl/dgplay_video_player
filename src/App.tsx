@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import PlaylistPlayer, { CreativeItem } from './components/PlaylistPlayer';
 import { ReconnectingSocket } from './services/socket';
 import { getDevice, postDevice } from './services/api';
 import Loader from './components/Loader';
 
-const DEVICE_ID = 51377;
+const DEFAULT_DEVICE_ID = 51377;
 
 const mapApiToCreativeItems = (rows: any[]): CreativeItem[] => {
   const isFiniteNumber = (val: any) => typeof val === 'number' && Number.isFinite(val);
@@ -24,11 +25,13 @@ const mapApiToCreativeItems = (rows: any[]): CreativeItem[] => {
     if (/\.(jpg|jpeg)($|\?)/.test(u)) return 'jpeg';
     if (/\.png($|\?)/.test(u)) return 'png';
     if (/\.gif($|\?)/.test(u)) return 'gif';
+    if (/banner/i.test(u)) return 'banner';
+    if (/pod/i.test(u)) return 'digital-pod';
     if (/^https?:\/\//.test(u)) return 'tag';
     return 'default';
   };
 
-  const allowedTypes = new Set(['mp4', 'jpg', 'jpeg', 'png', 'gif', 'tag', 'default']);
+  const allowedTypes = new Set(['mp4', 'jpg', 'jpeg', 'png', 'gif', 'tag', 'banner', 'digital-pod', 'default']);
 
   return (rows || [])
     .map((r, idx) => {
@@ -91,17 +94,31 @@ const filterItemsBySchedule = (items: CreativeItem[]): CreativeItem[] => {
   return (items || []).filter((it) => isWithinCampaignWindow(it));
 };
 
+/**
+ * Main App Component with Dynamic Device ID Support
+ * 
+ * Routes:
+ * - /device/:deviceId - Uses device ID from URL parameter
+ * - / - Uses default device ID (51377)
+ * 
+ * The device ID is passed to both GET and POST API calls for fetching playlist data.
+ */
 const App: React.FC = () => {
+  const { deviceId } = useParams<{ deviceId?: string }>();
   const [items, setItems] = useState<CreativeItem[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const socketRef = useRef<ReconnectingSocket<any> | null>(null);
   const pollRef = useRef<number | null>(null);
 
+  // Get device ID from URL params or use default
+  const currentDeviceId = deviceId ? parseInt(deviceId, 10) : DEFAULT_DEVICE_ID;
+  
+
   useEffect(() => {
     // Initial fetch
     setIsLoading(true);
-    getDevice({ deviceId: DEVICE_ID })
+    getDevice({ deviceId: currentDeviceId })
       .then((res) => {
         try {
           const rows = Array.isArray(res?.data) ? res.data : [];
@@ -125,7 +142,7 @@ const App: React.FC = () => {
     if (url) {
       const ws = new ReconnectingSocket<{ items?: CreativeItem[]; data?: any[]; error?: string; type?: string; message?: string }>({
         url,
-        initialSubscribe: { deviceId: DEVICE_ID }
+        initialSubscribe: { deviceId: currentDeviceId }
       });
       socketRef.current = ws;
       unsubscribe = ws.subscribe((payload: { items?: CreativeItem[]; data?: any[]; error?: string; type?: string; message?: string }) => {
@@ -146,7 +163,7 @@ const App: React.FC = () => {
 
     // Start 3s poller to POST deviceId and update items
     pollRef.current = window.setInterval(() => {
-      postDevice({ deviceId: DEVICE_ID })
+      postDevice({ deviceId: currentDeviceId })
         .then((res) => {
           const rows = Array.isArray(res?.data) ? res.data : [];
           const mapped = mapApiToCreativeItems(rows);
@@ -157,7 +174,7 @@ const App: React.FC = () => {
           console.warn('[API] postDevice poll failed', err?.message || err);
         });
       // Optional: also ping socket with deviceId
-      try { socketRef.current?.send({ deviceId: DEVICE_ID }); } catch {}
+      try { socketRef.current?.send({ deviceId: currentDeviceId }); } catch {}
     }, 300000);
 
     return () => {
@@ -168,7 +185,7 @@ const App: React.FC = () => {
         pollRef.current = null;
       }
     };
-  }, []);
+  }, [currentDeviceId]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
