@@ -480,17 +480,45 @@ const PlaylistPlayer: React.FC<PlaylistPlayerProps> = ({ items }) => {
 
     if (isVideo(item.creative_type)) {
       return (
+        <>
+        <style >{`
+      .video-js {
+        width: 100vw;
+        height: 100vh;
+      }
+      .vjs-tech {
+        object-fit: contain;
+      }
+      .vjs-big-play-button {
+        display: none !important;
+      }
+      .video-js .vjs-control-bar {
+        display: none;
+      }
+      .vjs-poster {
+        background-size: contain !important;
+        background-position: center center !important;
+        background-repeat: no-repeat !important;
+      }
+      .video-js.vjs-has-started .vjs-poster {
+        opacity: 0 !important;
+        visibility: hidden !important;
+        transition: none !important;
+      }
+    `}</style>
         <video
           key={item.id}
           ref={ref as React.Ref<HTMLVideoElement>}
-          className="absolute inset-0 select-none will-change-transform"
+          className="absolute inset-0 select-none will-change-transform video-js"
           src={item.creative_url}
           autoPlay
           muted
           playsInline
           preload="auto"
+          poster="https://ads.dgplay.live/assets/media/xDGTOOHL,P20LOGO,P20WHITE,P20,281,29.png.pagespeed.ic.nAbLOZbwbA.webp"
           style={responsiveStyles}
         />
+        </>
       );
     }
 

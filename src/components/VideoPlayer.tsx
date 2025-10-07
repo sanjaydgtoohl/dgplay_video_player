@@ -11,6 +11,8 @@ const formatTime = (seconds: number): string => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
+
+
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ src }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
@@ -47,14 +49,43 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src }) => {
   }, [src]);
 
   return (
+    <>
+    <style >{`
+      .video-js {
+        width: 100vw;
+        height: 100vh;
+      }
+      .vjs-tech {
+        object-fit: contain;
+      }
+      .vjs-big-play-button {
+        display: none !important;
+      }
+      .video-js .vjs-control-bar {
+        display: none;
+      }
+      .vjs-poster {
+        background-size: contain !important;
+        background-position: center center !important;
+        background-repeat: no-repeat !important;
+      }
+      .video-js.vjs-has-started .vjs-poster {
+        opacity: 0 !important;
+        visibility: hidden !important;
+        transition: none !important;
+      }
+    `}</style>
+    
+   
     <div className="relative flex flex-col items-center">
       <video
         ref={videoRef}
-        className="w-full max-w-3xl rounded-lg shadow"
+        className="w-full max-w-3xl rounded-lg shadow video-js"
         src={src}
         autoPlay
         muted
         playsInline
+        poster="https://ads.dgplay.live/assets/media/xDGTOOHL,P20LOGO,P20WHITE,P20,281,29.png.pagespeed.ic.nAbLOZbwbA.webp"
         // no default controls
       />
 
@@ -71,6 +102,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src }) => {
         />
       </div> */}
     </div>
+     </>
   );
 };
 
